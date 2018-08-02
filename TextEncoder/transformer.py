@@ -155,5 +155,14 @@ class Transformer(object):
 
 
 if __name__ == '__main__':
-    import doctest
-    doctest.testmod()
+    # import doctest
+    # doctest.testmod()
+
+
+
+    t = Transformer(cutter=list, use_placeholder=False)
+    ss = ['abcde', 'cdefgg', 'scdea']
+    t.feed(ss)
+    indexs = t('aacds1')
+    print(indexs)
+    print(t.index_to_token(indexs))
