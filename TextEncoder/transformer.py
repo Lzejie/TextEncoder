@@ -6,6 +6,8 @@
 # @Software: PyCharm Community Edition
 
 import re
+import json
+import pickle
 from collections import defaultdict
 
 import jieba
@@ -15,31 +17,36 @@ class Transformer(object):
     """
     将文本转化为索引序号，默认采用jiaba.cut作为分词方式，如果想采用字的方式，则使用list或自定义分词方式
 
-    >>> t = Transformer(cutter=list, use_placeholder=True)
+    >>> t = Transformer(cutter=list, use_placeholder=True, max_length=10)
     >>> ss = ['abcde', 'cdefgg', 'scdea']
     >>> t.feed(ss)
     >>> isinstance(t.text_to_index('aacds'), list) and len(t.text_to_index('aacds')) > 0
     True
-    >>> isinstance(t('aacds'), list) and len(t('aacds')) > 0
+    >>> isinstance(t('aacds', fill=False), list) and len(t('aacds', fill=True)) > 0
     True
     >>> indexs = t('as12356df')
     >>> t.index_to_token(indexs)
     ['a', 's', '@', '@', '@', '@', '@', 'd', 'f']
 
-    >>> t = Transformer(cutter=list, use_placeholder=False)
+    >>> t = Transformer(cutter=list, use_placeholder=False, max_length=10)
     >>> ss = ['abcde', 'cdefgg', 'scdea']
     >>> t.feed(ss)
     >>> isinstance(t.text_to_index('aacds'), list) and len(t.text_to_index('aacds')) > 0
     True
     >>> isinstance(t('aacds'), list) and len(t('aacds')) > 0
     True
-    >>> isinstance(t(''), list) and len(t('')) == 0
+    >>> isinstance(t('', fill=False), list) and len(t('', fill=False)) == 0
     True
     """
 
+    cutter_dict = {
+        'list': list,
+        'jieba': jieba.cut
+    }
+
     def __init__(
             self,
-            cutter=jieba.cut,
+            cutter='jieba',
             max_length=30,
             token_frequence=0,
             pretreat=lambda s: re.sub('[\t\n\r ]', '', s),
@@ -90,8 +97,11 @@ class Transformer(object):
         # token以及其出现的次数
         self.tokens = defaultdict(int)
 
-    def __call__(self, text):
-        return self.text_to_index(text)
+    def __call__(self, text, fill=True):
+        return self.text_to_index(text, fill=fill)
+
+    def __getitem__(self, index):
+        return self.index_token.get(index, self.UNK)
 
     def feed(self, texts):
         '''
@@ -110,27 +120,30 @@ class Transformer(object):
                 ), key=lambda x: -x[1]
             )
         ]
-        leave_tokens = [self.STR, self.END, self.UNK] + leave_tokens
+        leave_tokens = set([self.STR, self.END, self.UNK] + leave_tokens)
         self.token_index = dict(zip(leave_tokens, range(len(leave_tokens))))
         self.index_token = dict(zip(range(len(leave_tokens)), leave_tokens))
 
-    def transform_2_words(self, text):
+    def transform_2_words(self, text, fill=True):
         '''
         文本预处理入口
         :param text: 待处理文本
         :return: str
         '''
         new_line = self.STR + self.pretreat(text) + self.END
-        tokens = self.cutter(new_line)
-        return tokens[:self.max_length]
+        tokens = Transformer.cutter_dict[self.cutter](new_line)
+        if fill:
+            return tokens[:self.max_length] + [self.UNK] * max((self.max_length - len(tokens)), 0)
+        else:
+            return tokens[:self.max_length]
 
-    def text_to_index(self, text):
+    def text_to_index(self, text, fill=True):
         '''
         文本转化为索引
         :param text: 待转化文本
         :return: [int, int, ... , int]
         '''
-        return self.token_to_index(self.transform_2_words(text))
+        return self.token_to_index(self.transform_2_words(text, fill=fill))
 
     def token_to_index(self, tokens):
         '''
@@ -153,16 +166,68 @@ class Transformer(object):
             if self.index_token.get(index) not in [self.STR, self.END] and self.index_token.get(index)
         ]
 
+    def save(self, path):
+        save_data = {
+            'cutter': self.cutter,
+            'max_length': self.max_length,
+            'token_frequence': self.token_frequence,
+            'stop_words': tuple(self.stop_words),
+            'STR': self.STR,
+            'END': self.END,
+            'UNK': self.UNK,
+            'token_index': self.token_index,
+            'index_token': self.index_token,
+            'tokens': tuple(self.tokens),
+        }
+
+        with open(path, 'w') as f:
+            json.dump(save_data, f)
+        # with open(path, 'w') as f:
+        #     pickle.dump(self, f)
+
+
+    @staticmethod
+    def restore(path):
+        with open(path) as f:
+            data = json.load(f)
+        transformer = Transformer(
+            cutter=data['cutter'],
+            stop_words=set(data['stop_words']),
+            max_length=data['max_length'],
+            STR=data['STR'],
+            END=data['END'],
+            UNK=data['UNK'],
+            token_frequence=data['token_frequence'],
+        )
+
+        transformer.token_index = {
+            k: int(v)
+            for k, v in data['token_index'].items()
+        }
+        transformer.index_token = {
+            int(k): v
+            for k,v in data['index_token'].items()
+        }
+        transformer.tokens = set(data['tokens'])
+
+        return transformer
+        # with open(path) as f:
+        #     return pickle.load(f)
 
 if __name__ == '__main__':
     # import doctest
     # doctest.testmod()
 
-
-
-    t = Transformer(cutter=list, use_placeholder=False)
+    t = Transformer(cutter='list', use_placeholder=True)
     ss = ['abcde', 'cdefgg', 'scdea']
     t.feed(ss)
+    indexs = t('aacds1')
+    print(indexs)
+    print(t.index_to_token(indexs))
+
+    t.save('../tmp')
+    t = Transformer.restore('../tmp')
+
     indexs = t('aacds1')
     print(indexs)
     print(t.index_to_token(indexs))

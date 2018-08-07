@@ -10,7 +10,7 @@ from setuptools import setup, find_packages
 setup(
     name="TextEncoder",
     packages=find_packages(),
-    version='0.1.2',
+    version='0.1.6',
     description="text TextEncoder",
     author="L_zejie",
     author_email='lzj_xuexi@163.com',
